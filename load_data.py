@@ -186,9 +186,9 @@ class DataGenerator(object):
                 samples.append(c[indices])
                 lbl = np.zeros((self.num_samples_per_class+1, self.num_classes))
                 lbl[:, idx] = 1
-                labels.append(lbl)
+                labels.append(lbl.tolist())
             samples = np.array(samples)
-            all_samples.append(samples)
+            all_samples.append(samples.tolist())
             all_labels.append(labels)
         
         all_samples = torch.tensor(all_samples).float().to(self.device).permute(0,2,1,3)

@@ -6,10 +6,9 @@ import torch.nn.functional as F
 
 from torch import nn
 from load_data import DataGenerator
-from dnc import DNC
 from google_drive_downloader import GoogleDriveDownloader as gdd
 from torch.utils.tensorboard import SummaryWriter
-
+from tqdm import tqdm
 
 class MANN(nn.Module):
 
@@ -48,6 +47,7 @@ class MANN(nn.Module):
             out: tensor
             A tensor of shape [B, K+1, N, N] of class predictions
         """
+        device = next(self.layer1.parameters()).device
         b, k, n, d = input_images.shape
         k -= 1
         
@@ -60,12 +60,12 @@ class MANN(nn.Module):
         test_labels = input_labels[:,-1:].reshape(b, n, n)
         
         # Shuffle test order
-        indices = torch.randperm(n)
+        indices = torch.randperm(n).to(device)
         test_images = test_images[:,indices]
         test_labels = test_labels[:,indices]
         
         all_labels = torch.cat([train_labels, test_labels], dim=1).reshape(b, k+1, n, n)
-        test_labels = torch.zeros(test_labels.shape)
+        test_labels = torch.zeros(test_labels.shape).to(device)
         test_inps = torch.cat([test_images, test_labels], dim=2)
         
         all_inps = torch.cat([train_inps, test_inps], dim=1)
@@ -140,7 +140,7 @@ def main(config):
     model.to(device)
     optim = torch.optim.Adam(model.parameters(), lr = 1e-3)
     
-    for step in range(config.training_steps):
+    for step in tqdm(range(config.training_steps), position=0, leave=False):
         images, labels = data_generator.sample_batch('train', config.meta_batch_size)
         _, train_loss = train_step(images, labels, model, optim)
 
@@ -164,7 +164,7 @@ def main(config):
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--num_classes', type=int, default=5)
-    parser.add_argument('--num_samples', type=int, default=1)
+    parser.add_argument('--num_samples', type=int, default=3)
     parser.add_argument('--meta_batch_size', type=int, default=128)
     parser.add_argument('--logdir', type=str, 
                         default='run/log')
