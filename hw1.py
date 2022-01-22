@@ -6,9 +6,14 @@ import torch.nn.functional as F
 
 from torch import nn
 from load_data import DataGenerator
+from dnc import DNC
 from google_drive_downloader import GoogleDriveDownloader as gdd
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+import neptune.new as neptune
+
+api_token = ''
+run = neptune.init(project='kareem-elsawah/meta-learning', api_token=api_token, source_files=["*.py"])
 
 class MANN(nn.Module):
 
@@ -154,12 +159,15 @@ def main(config):
                                         config.num_classes])
             pred = torch.argmax(pred[:, -1, :, :], axis=2)
             labels = torch.argmax(labels[:, -1, :, :], axis=2)
-            
-            writer.add_scalar('Train Loss', train_loss.cpu().numpy(), step)
-            writer.add_scalar('Test Loss', test_loss.cpu().numpy(), step)
-            writer.add_scalar('Meta-Test Accuracy', 
-                              pred.eq(labels).double().mean().item(),
-                              step)
+            run['train_loss'].log(train_loss.cpu().numpy().reshape(-1)[0])
+            run['test_loss'].log(test_loss.cpu().numpy().reshape(-1)[0])
+            run['meta_test_acc'].log(pred.eq(labels).double().mean().item())
+
+            # writer.add_scalar('Train Loss', train_loss.cpu().numpy(), step)
+            # writer.add_scalar('Test Loss', test_loss.cpu().numpy(), step)
+            # writer.add_scalar('Meta-Test Accuracy', 
+            #                   pred.eq(labels).double().mean().item(),
+            #                   step)
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
@@ -169,6 +177,6 @@ if __name__=='__main__':
     parser.add_argument('--logdir', type=str, 
                         default='run/log')
     parser.add_argument('--training_steps', type=int, default=10000)
-    parser.add_argument('--log_every', type=int, default=100)
+    parser.add_argument('--log_every', type=int, default=10)
     parser.add_argument('--model_size', type=int, default=128)
     main(parser.parse_args())
