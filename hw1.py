@@ -32,20 +32,7 @@ class MANN(nn.Module):
                                     batch_first=True)
         initialize_weights(self.layer1)
         initialize_weights(self.layer2)
-        
-        self.dnc = DNC(
-                       input_size=num_classes + input_size,
-                       output_size=num_classes,
-                       hidden_size=model_size,
-                       rnn_type='lstm',
-                       num_layers=1,
-                       num_hidden_layers=1,
-                       nr_cells=num_classes,
-                       cell_size=64,
-                       read_heads=1,
-                       batch_first=True,
-                       gpu_id=0,
-                       )
+        self.loss = nn.CrossEntropyLoss()
 
     def forward(self, input_images, input_labels):
         """
@@ -61,11 +48,33 @@ class MANN(nn.Module):
             out: tensor
             A tensor of shape [B, K+1, N, N] of class predictions
         """
-        #############################
-        #### YOUR CODE GOES HERE ####
-        #############################
-
-        # SOLUTION:
+        b, k, n, d = input_images.shape
+        k -= 1
+        
+        train_images = input_images[:,:-1].reshape(b, n*k, d)
+        train_labels = input_labels[:,:-1].reshape(b, n*k, n)
+        
+        train_inps = torch.cat([train_images, train_labels], dim=2)
+        
+        test_images = input_images[:,-1:].reshape(b, n, d)
+        test_labels = input_labels[:,-1:].reshape(b, n, n)
+        
+        # Shuffle test order
+        indices = torch.randperm(n)
+        test_images = test_images[:,indices]
+        test_labels = test_labels[:,indices]
+        
+        all_labels = torch.cat([train_labels, test_labels], dim=1).reshape(b, k+1, n, n)
+        test_labels = torch.zeros(test_labels.shape)
+        test_inps = torch.cat([test_images, test_labels], dim=2)
+        
+        all_inps = torch.cat([train_inps, test_inps], dim=1)
+        
+        o1, _ = self.layer1(all_inps)
+        out = self.layer2(o1)[0].reshape(b, k+1, n, n) # (batch_size, n, k+1, d)
+        
+        return out, all_labels
+        
 
 
     def loss_function(self, preds, labels):
@@ -81,17 +90,21 @@ class MANN(nn.Module):
         Returns:
             scalar loss
         """
-        #############################
-        #### YOUR CODE GOES HERE ####
-        #############################
-
-        # SOLUTION:        
+        b,k,n,_ = preds.shape
+        k -= 1
+        
+        gt_label = labels[:,-1].reshape(-1,n) # (B*N,N)
+        preds = preds[:,-1].reshape(-1,n)
+        
+        gt_labels = torch.argmax(gt_label, dim=1).long() # (B*N,)
+        
+        return self.loss(preds, gt_labels)     
 
 
 
 def train_step(images, labels, model, optim):
-    predictions = model(images, labels)
-    loss = model.loss_function(predictions, labels)
+    predictions, gt_labels = model(images, labels)
+    loss = model.loss_function(predictions, gt_labels)
     
     optim.zero_grad()
     loss.backward()
@@ -100,8 +113,8 @@ def train_step(images, labels, model, optim):
 
 
 def model_eval(images, labels, model):
-    predictions = model(images, labels)
-    loss = model.loss_function(predictions, labels)
+    predictions, gt_labels = model(images, labels)
+    loss = model.loss_function(predictions, gt_labels)
     return predictions.detach(), loss.detach()
 
 
