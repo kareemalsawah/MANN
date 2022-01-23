@@ -12,8 +12,6 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import neptune.new as neptune
 
-api_token = ''
-run = neptune.init(project='kareem-elsawah/meta-learning', api_token=api_token, source_files=["*.py"])
 
 class MANN(nn.Module):
 
@@ -62,15 +60,9 @@ class MANN(nn.Module):
         train_inps = torch.cat([train_images, train_labels], dim=2)
         
         test_images = input_images[:,-1:].reshape(b, n, d)
-        test_labels = input_labels[:,-1:].reshape(b, n, n)
+        # test_labels = input_labels[:,-1:].reshape(b, n, n)
         
-        # Shuffle test order
-        indices = torch.randperm(n).to(device)
-        test_images = test_images[:,indices]
-        test_labels = test_labels[:,indices]
-        
-        all_labels = torch.cat([train_labels, test_labels], dim=1).reshape(b, k+1, n, n)
-        test_labels = torch.zeros(test_labels.shape).to(device)
+        test_labels = torch.zeros((b,n,n)).to(device)
         test_inps = torch.cat([test_images, test_labels], dim=2)
         
         all_inps = torch.cat([train_inps, test_inps], dim=1)
@@ -78,7 +70,7 @@ class MANN(nn.Module):
         o1, _ = self.layer1(all_inps)
         out = self.layer2(o1)[0].reshape(b, k+1, n, n) # (batch_size, n, k+1, d)
         
-        return out, all_labels
+        return out
         
 
 
@@ -98,18 +90,18 @@ class MANN(nn.Module):
         b,k,n,_ = preds.shape
         k -= 1
         
-        gt_label = labels[:,-1].reshape(-1,n) # (B*N,N)
+        labels = labels[:,-1].reshape(-1,n) # (B*N,N)
         preds = preds[:,-1].reshape(-1,n)
         
-        gt_labels = torch.argmax(gt_label, dim=1).long() # (B*N,)
+        labels = torch.argmax(labels, dim=1).long() # (B*N,)
         
-        return self.loss(preds, gt_labels)     
+        return self.loss(preds, labels)     
 
 
 
 def train_step(images, labels, model, optim):
-    predictions, gt_labels = model(images, labels)
-    loss = model.loss_function(predictions, gt_labels)
+    predictions = model(images, labels)
+    loss = model.loss_function(predictions, labels)
     
     optim.zero_grad()
     loss.backward()
@@ -118,14 +110,22 @@ def train_step(images, labels, model, optim):
 
 
 def model_eval(images, labels, model):
-    predictions, gt_labels = model(images, labels)
-    loss = model.loss_function(predictions, gt_labels)
+    predictions = model(images, labels)
+    loss = model.loss_function(predictions, labels)
     return predictions.detach(), loss.detach()
 
 
 def main(config):
     device = torch.device("cuda")
-    writer = SummaryWriter(config.logdir)
+    tensorboard_on = False
+    neptune_on = True
+
+    if tensorboard_on:
+        writer = SummaryWriter(config.logdir)
+    
+    if neptune_on:
+        api_token = ''
+        run = neptune.init(project='kareem-elsawah/meta-learning', api_token=api_token, source_files=["*.py"])
 
     # Download Omniglot Dataset
     if not os.path.isdir('./omniglot_resized'):
@@ -159,15 +159,17 @@ def main(config):
                                         config.num_classes])
             pred = torch.argmax(pred[:, -1, :, :], axis=2)
             labels = torch.argmax(labels[:, -1, :, :], axis=2)
-            run['train_loss'].log(train_loss.cpu().numpy().reshape(-1)[0])
-            run['test_loss'].log(test_loss.cpu().numpy().reshape(-1)[0])
-            run['meta_test_acc'].log(pred.eq(labels).double().mean().item())
+            if neptune_on:
+                run['train_loss'].log(train_loss.cpu().numpy().reshape(-1)[0])
+                run['test_loss'].log(test_loss.cpu().numpy().reshape(-1)[0])
+                run['meta_test_acc'].log(pred.eq(labels).double().mean().item())
 
-            # writer.add_scalar('Train Loss', train_loss.cpu().numpy(), step)
-            # writer.add_scalar('Test Loss', test_loss.cpu().numpy(), step)
-            # writer.add_scalar('Meta-Test Accuracy', 
-            #                   pred.eq(labels).double().mean().item(),
-            #                   step)
+            if tensorboard_on:
+                writer.add_scalar('Train Loss', train_loss.cpu().numpy(), step)
+                writer.add_scalar('Test Loss', test_loss.cpu().numpy(), step)
+                writer.add_scalar('Meta-Test Accuracy', 
+                                pred.eq(labels).double().mean().item(),
+                                step)
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser()

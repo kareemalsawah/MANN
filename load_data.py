@@ -43,6 +43,16 @@ def image_file_to_array(filename, dim_input):
     return image
 
 def load_imgs_from_folders(folders, dim_input):
+    '''
+    Loads all images as numpy arrays from any given folder
+
+    Args:
+        folders: list of strings, folders containing images (each folder is a character/class)
+        dim_input: Flattened shape of image
+    Returns:
+        list of characters, each character/class is a list of images for that character/class
+        each image is a 1d numpy array with values between 0-1
+    '''
     all_characters = []
     for folder in folders:
         character = []
@@ -109,6 +119,8 @@ class DataGenerator(object):
     def sample_batch(self, batch_type, batch_size):
         """
         Samples a batch for training, validation, or testing
+        if self.in_mem, sample_batch_mem is used
+
         Args:
             batch_type: str
                 train/val/test set to sample from
@@ -153,8 +165,15 @@ class DataGenerator(object):
             for img_pth in img_paths:
                 imgs.append(image_file_to_array(img_pth, self.dim_input))
             imgs = np.array(imgs).reshape(self.num_classes,self.num_samples_per_class+1,self.dim_input)
+            
+            # Shuffle last N classes (K-shot test images)
+            rand_indices = np.random.permutation(self.num_classes)
+            imgs[:,-1] = imgs[rand_indices,-1]
+            labels = np.array(samples[:,0].tolist()).reshape(self.num_classes,self.num_samples_per_class+1,self.num_classes)
+            labels[:,-1] = labels[rand_indices,-1]
+            
             all_samples.append(imgs)
-            all_labels.append(np.array(samples[:,0].tolist()).reshape(self.num_classes,self.num_samples_per_class+1,self.num_classes))
+            all_labels.append(labels)
         
         all_samples = torch.tensor(all_samples).float().to(self.device).permute(0,2,1,3)
         all_labels = torch.tensor(all_labels).long().to(self.device).permute(0,2,1,3)
@@ -163,6 +182,29 @@ class DataGenerator(object):
     
     
     def sample_batch_mem(self, batch_type, batch_size):
+        """
+        Samples a batch for training, validation, or testing
+        Different from sample_batch in that it uses images that have already been loaded into memory
+        This is expensive but is much faster for small datasets
+
+        Args:
+            batch_type: str
+                train/val/test set to sample from
+                
+            batch_size: int:
+                Size of batch of tasks to sample
+                
+        Returns:
+            images: tensor
+                A tensor of images of size [B, K+1, N, 784]
+                where B is batch size, K is number of samples per class, 
+                N is number of classes
+                
+            labels: tensor
+                A tensor of images of size [B, K+1, N, N] 
+                where B is batch size, K is number of samples per class, 
+                N is number of classes
+        """
         if batch_type == "train":
             characters = self.metatrain_characters
         elif batch_type == "val":
@@ -181,15 +223,21 @@ class DataGenerator(object):
             samples = []
             labels = []
             for idx,c in enumerate(N_classes):
-                # Reminder: need to shuffle
-                indices = np.random.randint(0,c.shape[0],self.num_samples_per_class+1)
+                indices = np.random.permutation(c.shape[0])[:self.num_samples_per_class+1]
                 samples.append(c[indices])
                 lbl = np.zeros((self.num_samples_per_class+1, self.num_classes))
                 lbl[:, idx] = 1
-                labels.append(lbl.tolist())
+                labels.append(lbl)
             samples = np.array(samples)
+            
+            # Shuffle last N classes (K-shot test images)
+            rand_indices = np.random.permutation(self.num_classes)
+            samples[:,-1] = samples[rand_indices,-1]
+            labels = np.array(labels)
+            labels[:,-1] = labels[rand_indices,-1]
+            
             all_samples.append(samples.tolist())
-            all_labels.append(labels)
+            all_labels.append(labels.tolist())
         
         all_samples = torch.tensor(all_samples).float().to(self.device).permute(0,2,1,3)
         all_labels = torch.tensor(all_labels).long().to(self.device).permute(0,2,1,3)
