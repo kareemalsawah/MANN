@@ -160,9 +160,9 @@ def main(config):
             pred = torch.argmax(pred[:, -1, :, :], axis=2)
             labels = torch.argmax(labels[:, -1, :, :], axis=2)
             if neptune_on:
-                run['train_loss'].log(train_loss.cpu().numpy().reshape(-1)[0])
-                run['test_loss'].log(test_loss.cpu().numpy().reshape(-1)[0])
-                run['meta_test_acc'].log(pred.eq(labels).double().mean().item())
+                run['train_loss'].log(train_loss.cpu().numpy().reshape(-1)[0], step=step)
+                run['test_loss'].log(test_loss.cpu().numpy().reshape(-1)[0], step=step)
+                run['meta_test_acc'].log(pred.eq(labels).double().mean().item(), step=step)
 
             if tensorboard_on:
                 writer.add_scalar('Train Loss', train_loss.cpu().numpy(), step)
